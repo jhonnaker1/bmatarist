@@ -32,3 +32,4 @@ docs/a*/*.md
 # Local launch settings (the app's browser pane)
 .claude/launch.json
 .DS_Store
+tools/bigalloc/build/

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.1 – 2026-11-10
+
+Fixes from the first runs on a Pi 5.
+
+- Settings are saved on the Pi: Hatari writes hatari.cfg through a
+  temporary file, and newlib's tmpfile() fails on the card (there's no
+  /tmp), so hatari.cfg stayed empty, no setting was kept, and the second
+  start of a card stopped with "Failed to load TOS image". Temporary files
+  are now kept in memory; a card with an empty hatari.cfg gets EmuTOS again
+- Saved states on a machine without TT-RAM (an ST or a Mega STE) after the
+  TT-RAM setting was raised for a TT: Hatari saved TT-RAM that wasn't
+  there, and the state was broken. TT-RAM is now saved as 0 there
+- A state file is checked after it's saved (a failed one is deleted, and
+  the menu says so) and before it's loaded: a broken one isn't loaded
+  (loading one froze the Pi)
+- Memory isn't used up after many changes of machine, TOS or memory, floppy
+  changes and saved states: Circle never reuses a freed block over 512 KB,
+  and Hatari frees and allocates the ST's memory at every cold reset
+  (src/port/bigalloc.c, from BMNeXT, keeps them for reuse)
+- Simulator tests for an empty hatari.cfg, a Mega STE's saved state with
+  TT-RAM set, a broken state file; tools/bigalloc tests the memory reuse
+
 ## 0.1.0 – 2026-10-21
 
 The first BMAtariST: BMApple2 0.4.2 (itself from BMCoco, BMA800XL and

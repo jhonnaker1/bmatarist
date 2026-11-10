@@ -419,11 +419,12 @@ static const char *default_tos(void)
 }
 
 /* Is the TOS image hatari.cfg names there? Read from the file itself: it
-   is checked before Hatari has started. */
+   is checked before Hatari has started. A hatari.cfg that names none (an
+   empty one: 0.1.0 couldn't save its settings on the Pi) counts as not. */
 static int cfg_tos_exists(const char *cfg)
 {
 	char line[512];
-	int found = TRUE;
+	int found = FALSE;
 	FILE *f = fopen(cfg, "r");
 	if (f == NULL)
 		return FALSE;

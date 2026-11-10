@@ -41,7 +41,7 @@ HATARI_LIB := $(BUILD)/libhatari.a
 
 OBJS = src/main.o src/kernel.o src/logging.o src/options.o \
        src/port/platform.o src/port/menu.o src/port/osd.o src/port/posix_extra.o \
-       src/port/fswrap.o \
+       src/port/fswrap.o src/port/bigalloc.o src/port/bigalloc_size.o \
        $(addprefix src/port/,$(HATARI_PORT_SRCS:.c=.o)) \
        src/network.o src/network_time_sync.o \
        src/webui/webui.o src/webui/webui_http.o src/webui/webui_fs.o \
@@ -78,7 +78,9 @@ include $(CIRCLEHOME)/Rules.mk
 INCLUDE := $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE) -I $(CIRCLEHOME)/addon/fatfs
 
 # See src/port/fswrap.c
-LDFLAGS += --wrap=stat
+LDFLAGS += --wrap=stat --wrap=tmpfile
+# See src/port/bigalloc.c
+LDFLAGS += --wrap=malloc --wrap=free --wrap=calloc --wrap=realloc
 
 VERSION_DEFINES = -DBMATARIST_VERSION=\"$(BMATARIST_VERSION)\" \
                   -DBMATARIST_GIT=\"$(BMATARIST_GIT)\" -DHATARI_GIT=\"$(HATARI_VERSION)\"

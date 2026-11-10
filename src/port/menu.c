@@ -22,13 +22,18 @@
 #include "floppy.h"
 #include "joy_ui.h"
 #include "memorySnapShot.h"
+#include "stMemory.h"
 #include "tos.h"
 #include "version.h"
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
+#include <zlib.h>
 
 #include "../host.h"
 #include "bmatarist.h"
@@ -1015,6 +1020,43 @@ static void state_label(int slot, char *text, size_t size)
 	}
 }
 
+/* Is the state file whole? Hatari's state is a gzip stream that ends with
+   SNAPSHOT_MAGIC (0xDeadBeef, memorySnapShot.c). A save that failed half
+   way leaves a broken file, and restoring one leaves the ST half restored:
+   Hatari stops at an assert() (it froze on the Pi). */
+static int state_file_ok(const char *path)
+{
+	static const unsigned char magic[4] = {0xef, 0xbe, 0xad, 0xde};
+	unsigned char last[4] = {0, 0, 0, 0};
+	unsigned char *buf;
+	long total = 0;
+	int n, err, ok;
+	gzFile f = gzopen(path, "rb");
+	if (f == NULL)
+		return FALSE;
+	buf = malloc(64 * 1024);
+	if (buf == NULL) {
+		gzclose(f);
+		return FALSE;
+	}
+	while ((n = gzread(f, buf, 64 * 1024)) > 0) {
+		if (n >= 4) {
+			memcpy(last, buf + n - 4, 4);
+		} else {
+			memmove(last, last + n, 4 - n);
+			memcpy(last + 4 - n, buf, n);
+		}
+		total += n;
+	}
+	gzerror(f, &err);
+	ok = n == 0 && err == Z_OK && total >= 4 && memcmp(last, magic, 4) == 0;
+	/* Z_BUF_ERROR: the file ended inside the gzip stream. */
+	if (gzclose(f) != Z_OK)
+		ok = FALSE;
+	free(buf);
+	return ok;
+}
+
 /* Returns TRUE if a state was loaded (the menu then closes). */
 static int states_menu(int load)
 {
@@ -1037,6 +1079,11 @@ static int states_menu(int load)
 			osd_message("That slot is empty.", TRUE);
 			return FALSE;
 		}
+		if (!state_file_ok(path)) {
+			printf("BMAtariST: %s is broken, not loaded\n", path);
+			osd_message("That saved state is broken (an old save that failed), so it wasn't loaded.", TRUE);
+			return FALSE;
+		}
 		printf("BMAtariST: loading %s\n", path);
 		MemorySnapShot_Restore(path, false);
 		return TRUE;
@@ -1044,11 +1091,23 @@ static int states_menu(int load)
 	bmatarist_card_path(dir, sizeof dir, "snapshots", "");
 	mkdir(dir, 0777);
 	printf("BMAtariST: saving %s\n", path);
-	MemorySnapShot_Capture_Immediate(path, false);
-	if (stat(path, &st) != 0 || st.st_size == 0)
+	{
+		/* Hatari saves TT-RAM whenever the setting isn't 0 (stMemory.c),
+		   but a machine without it (an ST, or a Mega STE after a TT) has
+		   none to save: the save failed. Saved, and so restored, as 0. */
+		int tt_kb = ConfigureParams.Memory.TTRamSize_KB;
+		if (TTmemory == NULL)
+			ConfigureParams.Memory.TTRamSize_KB = 0;
+		MemorySnapShot_Capture_Immediate(path, false);
+		ConfigureParams.Memory.TTRamSize_KB = tt_kb;
+	}
+	if (stat(path, &st) != 0 || !state_file_ok(path)) {
+		printf("BMAtariST: saving %s failed\n", path);
+		unlink(path);
 		osd_message("Cannot save the state on the SD card.", TRUE);
-	else
+	} else {
 		osd_notify("State saved");
+	}
 	return FALSE;
 }
 

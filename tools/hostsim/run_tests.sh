@@ -47,6 +47,15 @@ check_log() {
     fi
 }
 
+# check_nolog NAME REGEX MESSAGE: out/NAME/log.txt must not have REGEX
+check_nolog() {
+    if grep -Eq "$2" "$OUT/$1/log.txt"; then
+        fail "$1" "$3 (see out/$1/log.txt)"
+    else
+        pass "$1: $3"
+    fi
+}
+
 # check_cfg NAME FILE REGEX MESSAGE: out/NAME/FILE must have a line REGEX
 check_cfg() {
     if grep -Eq "$3" "$OUT/$1/$2" 2>/dev/null; then
@@ -160,6 +169,14 @@ cp "$OUT/boot/hatari.cfg" "$OUT/boot2/hatari.cfg"
 run boot2 60 "" '1500 shot a.ppm\n1501 quit\n'
 desktop boot2 a
 
+echo "Starting with an empty hatari.cfg (0.1.0 left one on the Pi)"
+mkdir -p "$OUT/emptycfg"
+: > "$OUT/emptycfg/hatari.cfg"
+run emptycfg 60 "" '1500 shot a.ppm\n1501 quit\n'
+check_log emptycfg "the TOS in hatari.cfg isn't there" "an empty hatari.cfg gets EmuTOS"
+check_cfg emptycfg hatari.cfg "^szTosImageFileName = .*etos1024k\.img" "and it is saved in hatari.cfg"
+desktop emptycfg a
+
 echo "On a 50 Hz display"
 run timer 50 "" '1500 shot a.ppm\n1800 audio\n1801 quit\n'
 check_log timer "timer paced" "a 60 Hz ST on a 50 Hz display is timer paced"
@@ -233,6 +250,35 @@ check_log states "Memory state file saved: .*snapshots/state1\.sav" "saved to sn
 check_log states "Memory state file restored" "loaded"
 differ states saved moved
 same states saved loaded
+
+echo "Save and load a state: a Mega STE, with TT-RAM set from a TT before"
+# A machine without TT-RAM keeps the TT-RAM setting a TT had: Hatari would
+# save the TT-RAM it doesn't have, and the state failed (a broken file).
+mkdir -p "$OUT/ttstates"
+cp "$OUT/boot/hatari.cfg" "$OUT/ttstates/hatari.cfg"
+python3 - "$OUT/ttstates/hatari.cfg" <<'EOF'
+import sys
+cfg = sys.argv[1]
+lines = open(cfg).read().split('\n')
+set_to = {'nMemorySize': '14336', 'nTTRamSize': '262144', 'nModelType': '3'}
+lines = [(l.split(' =')[0] + ' = ' + set_to[l.split(' =')[0]]) if l.split(' =')[0] in set_to else l
+         for l in lines]
+open(cfg, 'w').write('\n'.join(lines))
+EOF
+run ttstates 60 "" "1500 shot saved.ppm\n$(key $F12 1510)$(downs 2 1520)$(key $ENTER 1535)$(key $ENTER 1545)1600 mouse 60 40 0\n1601 mouse 60 40 0\n1620 shot moved.ppm\n$(key $F12 1630)$(downs 1 1640)$(key $ENTER 1650)$(key $ENTER 1660)1900 shot loaded.ppm\n1901 quit\n"
+check_log ttstates "Memory state file saved: .*snapshots/state1\.sav" "saved"
+check_log ttstates "Memory state file restored" "loaded"
+differ ttstates saved moved
+same ttstates saved loaded
+
+echo "A broken state file: not loaded, the ST goes on"
+mkdir -p "$OUT/badstate/snapshots"
+cp "$OUT/boot/hatari.cfg" "$OUT/badstate/hatari.cfg"
+head -c 100000 "$OUT/states/snapshots/state1.sav" > "$OUT/badstate/snapshots/state1.sav"
+run badstate 60 "" "1500 shot a.ppm\n$(key $F12 1510)$(downs 3 1520)$(key $ENTER 1535)$(key $ENTER 1545)1600 shot msg.ppm\n$(key $ENTER 1610)$(key $ESC 1630)1700 shot b.ppm\n1701 quit\n"
+check_log badstate "state1\.sav is broken, not loaded" "a broken state isn't loaded"
+check_nolog badstate "Memory state file restored" "nothing restored"
+desktop badstate b
 
 echo "A folder as drive C:"
 mkdir -p "$OUT/gemdos/hd/C"
